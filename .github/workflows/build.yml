@@ -66,7 +66,6 @@ jobs:
           build_param: --debug
           artifact_name: xemu-win-debug
         - configuration: Release
-          build_param: --release
           artifact_name: xemu-win-release
     env:
       DOCKER_IMAGE_NAME: ghcr.io/xemu-project/xemu-win64-toolchain:sha-d0d3e7b

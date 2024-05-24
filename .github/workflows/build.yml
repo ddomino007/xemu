@@ -64,7 +64,7 @@ jobs:
           build_param: --debug
           artifact_name: xemu-win-debug
         - configuration: Release
-          build_param:
+          build_param: --release
           artifact_name: xemu-win-release
     env:
       DOCKER_IMAGE_NAME: ghcr.io/xemu-project/xemu-win64-toolchain:sha-d0d3e7b
@@ -136,106 +136,6 @@ jobs:
       with:
         name: ${{ matrix.artifact_name }}-pdb
         path: dist
-
-  Ubuntu:
-    name: Build for Ubuntu (${{ matrix.configuration }})
-    runs-on: ubuntu-latest
-    needs: Init
-    strategy:
-      matrix:
-        include:
-        - configuration: Debug
-          build_param: --debug
-          artifact_name: xemu-ubuntu-debug
-          artifact_filename: xemu-ubuntu-debug.tgz
-        - configuration: Release
-          build_param:
-          artifact_name: xemu-ubuntu-release
-          artifact_filename: xemu-ubuntu-release.tgz
-    steps:
-    - name: Initialize compiler cache
-      id: cache
-      uses: actions/cache@v3
-      with:
-        path: /tmp/xemu-ccache
-        key: cache-${{ runner.os }}-${{ matrix.configuration }}-${{ github.sha }}
-        restore-keys: cache-${{ runner.os }}-${{ matrix.configuration }}-
-    - name: Download source package
-      uses: actions/download-artifact@v3
-      with:
-        name: src.tar.gz
-    - name: Extract source package
-      run: |
-        mkdir src
-        tar -C src -xf src.tar.gz
-    - name: Clone Debian packaging
-      uses: actions/checkout@v3
-      with:
-        ref: deb
-        path: debian-tmp
-    - name: Integrate Debian packaging
-      run: |
-        mv debian-tmp/debian src
-        rm -rf debian-tmp
-        pushd src
-        echo -e "\
-        xemu (1:$(cat XEMU_VERSION)-0) unstable; urgency=medium\n\
-          Built from $(cat XEMU_VERSION)\n\
-         -- Matt Borgerson <contact@mborgerson.com>  $(date -R)" > debian/changelog
-        popd
-    - name: Install dependencies
-      run: |
-        export DEBIAN_FRONTEND=noninteractive
-        sudo apt-get -qy update
-        sudo apt-get install ccache libfuse2
-        pushd src
-        sudo apt-get -qy build-dep .
-    - name: Compile
-      run: |
-        export CCACHE_DIR=/tmp/xemu-ccache
-        export CCACHE_MAXSIZE=512M
-        export PATH="/usr/lib/ccache:$PATH"
-        export XEMU_BUILD_OPTIONS="${{ matrix.build_param }} --extra-cflags='-fuse-ld=gold'"
-        ccache -z
-
-        # XXX: dpkg-genbuildinfo takes two minutes on GH runners. Nuke it for now.
-        sudo rm /usr/bin/dpkg-genbuildinfo
-        sudo ln -s /bin/true /usr/bin/dpkg-genbuildinfo
-
-        pushd src
-        dpkg-buildpackage --no-sign -b
-        popd
-
-        mkdir -p dist
-        mv *.deb *.ddeb dist
-
-        echo -e "\n\nCompiler Cache Stats:"
-        ccache -s
-    - name: Generate AppImage
-      run: |
-        wget --no-verbose https://github.com/linuxdeploy/linuxdeploy/releases/latest/download/linuxdeploy-x86_64.AppImage
-        chmod +x linuxdeploy-x86_64.AppImage
-
-        ar x dist/*.deb
-        mkdir appimage
-        tar -C appimage -xf data.tar*
-        install -DT src/xemu.appdata.xml appimage/usr/share/metainfo/xemu.appdata.xml
-
-        export VERSION=v$(cat src/XEMU_VERSION)
-        if [[ "${{ matrix.configuration }}" == "Debug" ]]; then
-          export VERSION=$VERSION-dbg
-        fi
-
-        ./linuxdeploy-x86_64.AppImage --output appimage --appdir appimage
-        mv xemu-*.AppImage dist
-    - name: Bundle artifacts
-      run: |
-        tar -czvf ${{ matrix.artifact_filename }} --transform "s#^dist#xemu#" dist
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: ${{ matrix.artifact_name }}
-        path: ${{ matrix.artifact_filename }}
 
   macOS:
     name: Build for macOS (${{ matrix.arch }}, ${{ matrix.configuration }})
@@ -355,7 +255,7 @@ jobs:
   Release:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
-    needs: [Ubuntu, macOSUniversal, WindowsPdb]
+    needs: [macOSUniversal, WindowsPdb]
     steps:
     - name: Download artifacts
       uses: actions/download-artifact@v3
@@ -399,44 +299,3 @@ jobs:
         repo: xemu-project/xemu-website
         token: ${{ secrets.XEMU_ROBOT_TOKEN }}
         ref: master
-
-  # Sync archive version of source (including submodule code) to the
-  # ppa-snapshot branch to work around limitations of the Launchpad platform,
-  # namely: no network egress on package build, no custom scripting in source
-  # package creation.
-  PushToPPA:
-    name: Push to PPA Snapshot Branch
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [Ubuntu, macOSUniversal, WindowsPdb]
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download source package
-      uses: actions/download-artifact@v3
-      with:
-        name: src.tar.gz
-    - name: Extract source package
-      run: |
-        mkdir src
-        tar -C src -xf src.tar.gz
-    - name: Clone Debian packaging
-      uses: actions/checkout@v3
-      with:
-        ref: deb
-        path: debian-tmp
-    - name: Integrate Debian packaging
-      run: |
-        mv debian-tmp/debian src
-        rm -rf debian-tmp
-        pushd src
-        echo -e "\
-        xemu (1:$(cat XEMU_VERSION)-0) unstable; urgency=medium\n\
-          Built from $(cat XEMU_VERSION)\n\
-         -- Matt Borgerson <contact@mborgerson.com>  $(date -R)" > debian/changelog
-        popd
-    - name: Deploy source archive to branch
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./src
-        publish_branch: ppa-snapshot
-        force_orphan: true

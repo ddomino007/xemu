@@ -53,6 +53,7 @@ jobs:
       with:
         name: src.tar.gz
         path: src.tar.gz
+        retention-days: 1
 
   Windows:
     name: Build for Windows (${{ matrix.configuration }}) on Ubuntu
@@ -102,6 +103,7 @@ jobs:
       with:
         name: ${{ matrix.artifact_name }}
         path: dist
+        retention-days: 7
 
   # Generate a symbols package for Windows. Use cv2pdb to generate PDBs from
   # DWARF and update + strip the executable. Re-package the original release
@@ -137,6 +139,7 @@ jobs:
       with:
         name: ${{ matrix.artifact_name }}-pdb
         path: dist
+        retention-days: 7
 
   macOS:
     name: Build for macOS (${{ matrix.arch }}, ${{ matrix.configuration }})
@@ -209,6 +212,7 @@ jobs:
       with:
         name: ${{ matrix.artifact_name }}
         path: ${{ matrix.artifact_filename }}
+        retention-days: 7
 
   macOSUniversal:
     name: Build macOS Universal Bundle (${{ matrix.configuration }})
@@ -252,6 +256,7 @@ jobs:
       with:
         name: xemu-macos-universal-${{ matrix.configuration }}
         path: xemu-macos-universal-${{ matrix.configuration }}.zip
+        retention-days: 7
 
   Release:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
